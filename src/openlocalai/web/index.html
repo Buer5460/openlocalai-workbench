@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenLocalAI Workbench</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="app-locked">
+  <header>
+    <div class="brand"><span class="mark">O</span><div><strong>OpenLocalAI</strong><small>开源离线 AI 工作台</small></div></div>
+    <div class="header-actions"><span class="badge" id="header-status">正在检查环境</span><button class="text-button hidden" id="logout-btn">退出</button></div>
+  </header>
+
+  <aside class="auth-gate" id="auth-gate" aria-live="polite">
+    <section class="auth-card" id="bootstrap-card">
+      <p class="eyebrow">首次启动 · 仅需一次</p>
+      <h2>创建本机管理员</h2>
+      <p>账号只保存在本机。密码至少 12 位，用于保护材料、模型下载和审批操作。</p>
+      <label>管理员账号<input id="bootstrap-username" autocomplete="username" maxlength="64" value="admin"></label>
+      <label>管理员密码<input id="bootstrap-password" type="password" autocomplete="new-password" minlength="12" maxlength="256"></label>
+      <label>再次输入密码<input id="bootstrap-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="256"></label>
+      <button class="primary wide" id="bootstrap-btn">创建管理员并进入</button>
+    </section>
+    <section class="auth-card hidden" id="login-card">
+      <p class="eyebrow">本地身份验证</p>
+      <h2>登录工作台</h2>
+      <p>数据和凭据不会发送到云端。</p>
+      <label>账号<input id="login-username" autocomplete="username" maxlength="64"></label>
+      <label>密码<input id="login-password" type="password" autocomplete="current-password" maxlength="256"></label>
+      <button class="primary wide" id="login-btn">登录</button>
+    </section>
+  </aside>
+
+  <main id="app-main" aria-hidden="true">
+    <section class="hero">
+      <p class="eyebrow">材料不出本机 · 结论带出处 · 决策由人审批</p>
+      <h1>把内部材料，变成一条<br>可核查的工作流程</h1>
+      <p>按四步完成导入、证据问答、形成简报和人工审批。模型可以直接下载到本机，断网后继续使用。</p>
+    </section>
+
+    <section class="runtime-card">
+      <div>
+        <p class="eyebrow">本地模型运行环境</p>
+        <h2 id="runtime-title">正在检测……</h2>
+        <p id="runtime-detail">检查操作系统、内存、运行时和已安装模型。</p>
+      </div>
+      <div class="runtime-controls">
+        <label>模型档位
+          <select id="model-select" aria-label="模型档位"><option value="">正在加载</option></select>
+        </label>
+        <button class="primary" id="model-pull-btn" disabled>下载并部署模型</button>
+      </div>
+      <div class="progress hidden" id="model-progress"><span id="model-progress-bar"></span></div>
+      <p class="micro" id="model-note">下载前会显示模型名称；模型文件保存在本机。若运行时不可用，请先运行随发行包提供的安装器。</p>
+    </section>
+
+    <nav class="steps" aria-label="工作步骤">
+      <button class="step active" data-step="1"><b>01</b><span>导入材料</span></button>
+      <button class="step" data-step="2"><b>02</b><span>证据问答</span></button>
+      <button class="step" data-step="3"><b>03</b><span>生成简报</span></button>
+      <button class="step" data-step="4"><b>04</b><span>人工审批</span></button>
+    </nav>
+
+    <section class="panel active" id="panel-1">
+      <div class="panel-title"><span>01</span><div><h2>导入工作材料</h2><p>支持 UTF-8 文本、Markdown、CSV、JSON；内容仅写入本机 SQLite。</p></div></div>
+      <label>材料名称<input id="doc-name" value="工作材料.md" maxlength="200"></label>
+      <label>材料正文<textarea id="doc-content" rows="9" placeholder="粘贴公开、合成或已脱敏的材料……"></textarea></label>
+      <div class="actions"><button class="primary" id="import-btn">导入并切分</button><button class="secondary next" data-next="2">已有材料，下一步</button></div>
+      <div class="result" id="documents"></div>
+    </section>
+
+    <section class="panel" id="panel-2">
+      <div class="panel-title"><span>02</span><div><h2>只根据材料回答</h2><p>本地模型可增强表达；没有证据时仍明确说不知道。</p></div></div>
+      <label>你的问题<textarea id="question" rows="4">这份材料规定了哪些审核和留痕要求？</textarea></label>
+      <div class="actions"><button class="primary" id="answer-btn">查找证据并回答</button></div>
+      <article class="result answer" id="answer-result"></article>
+      <button class="secondary next hidden" id="to-report" data-next="3">用这个问题生成简报</button>
+    </section>
+
+    <section class="panel" id="panel-3">
+      <div class="panel-title"><span>03</span><div><h2>形成待审简报</h2><p>自动结果只能是初稿，必须由有权限的人员复核。</p></div></div>
+      <label>简报标题<input id="report-title" value="材料审核与留痕要求简报"></label>
+      <div class="actions"><button class="primary" id="report-btn">生成待审简报</button></div>
+      <pre class="result report" id="report-result"></pre>
+      <button class="secondary next hidden" id="to-approve" data-next="4">进入人工审批</button>
+    </section>
+
+    <section class="panel" id="panel-4">
+      <div class="panel-title"><span>04</span><div><h2>人工确认与留痕</h2><p>请先对照来源复核内容。审批人信息会写入审计记录。</p></div></div>
+      <label>审批人<input id="reviewer" placeholder="请输入真实复核人员姓名"></label>
+      <label class="check"><input id="confirmed" type="checkbox"> 我已核对原始材料、适用范围和时效性</label>
+      <div class="actions"><button class="primary" id="approve-btn" disabled>确认审批</button></div>
+      <div class="result" id="approve-result"></div>
+      <details><summary>查看最近审计记录</summary><div id="audits"></div></details>
+    </section>
+  </main>
+  <footer>OpenLocalAI v0.2.0-alpha · Apache-2.0 · 非政府官方产品或认证产品</footer>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

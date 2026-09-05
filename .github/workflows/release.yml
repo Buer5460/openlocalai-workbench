@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: OpenLocalAI-linux-x86_64
+            archive: tar
+          - os: windows-latest
+            artifact: OpenLocalAI-windows-x86_64
+            archive: zip
+          - os: macos-14
+            artifact: OpenLocalAI-macos-arm64
+            archive: tar
+          - os: macos-15-intel
+            artifact: OpenLocalAI-macos-x86_64
+            archive: tar
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e . pyinstaller==6.22.2
+      - name: Verify tag matches application version
+        shell: bash
+        run: |
+          APP_VERSION="$(python -c 'import openlocalai; print(openlocalai.__version__)')"
+          test "${GITHUB_REF_NAME}" = "v${APP_VERSION}"
+      - run: python -m unittest discover -s tests -v
+      - run: python -m PyInstaller --noconfirm --clean OpenLocalAI.spec
+      - name: Smoke test executable
+        shell: bash
+        run: ./dist/OpenLocalAI${{ runner.os == 'Windows' && '.exe' || '' }} --version
+      - name: Stage release files
+        shell: bash
+        run: |
+          mkdir release-package
+          git archive --format=tar HEAD -- \
+            LICENSE NOTICE README.md SECURITY.md THIRD_PARTY_NOTICES.md \
+            CONTRIBUTING.md GOVERNANCE.md Dockerfile .dockerignore \
+            compose.yaml compose.nvidia.yaml pyproject.toml OpenLocalAI.spec \
+            src scripts docs licenses examples skills \
+            | tar -xf - -C release-package
+          cp "dist/OpenLocalAI${{ runner.os == 'Windows' && '.exe' || '' }}" release-package/
+          python scripts/generate_desktop_sbom.py \
+            "dist/OpenLocalAI${{ runner.os == 'Windows' && '.exe' || '' }}" \
+            release-package/OpenLocalAI.spdx.json \
+            --version "${GITHUB_REF_NAME#v}"
+          python scripts/check_release_tree.py \
+            release-package \
+            --forbid-text "${GITHUB_WORKSPACE}"
+      - name: Package tar archive
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: tar -C release-package -czf "${{ matrix.artifact }}.tar.gz" .
+      - name: Package zip archive
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path release-package/* -DestinationPath "${{ matrix.artifact }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: OpenLocalAI-*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        run: cd release-assets && sha256sum OpenLocalAI-* > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --repo "${GITHUB_REPOSITORY}" --generate-notes --verify-tag

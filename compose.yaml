@@ -1,0 +1,103 @@
+name: openlocalai
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.33.3}
+    container_name: openlocalai-ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-4096}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-q8_0}
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  model-init:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.33.3}
+    container_name: openlocalai-model-init
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OPENLOCALAI_MODEL: ${OPENLOCALAI_MODEL:-qwen3.5:4b-q4_K_M}
+    entrypoint: ["/bin/sh", "-eu", "-c"]
+    command:
+      - |
+        if ollama show "$${OPENLOCALAI_MODEL}" >/dev/null 2>&1; then
+          echo "Model $${OPENLOCALAI_MODEL} is already installed."
+        else
+          echo "Downloading model $${OPENLOCALAI_MODEL}..."
+          ollama pull "$${OPENLOCALAI_MODEL}"
+        fi
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  app:
+    image: ${OPENLOCALAI_IMAGE:-openlocalai-workbench:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openlocalai-app
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OPENLOCALAI_MODEL: ${OPENLOCALAI_MODEL:-qwen3.5:4b-q4_K_M}
+      OPENLOCALAI_MODEL_TIMEOUT: ${OPENLOCALAI_MODEL_TIMEOUT:-180}
+    ports:
+      - "${OPENLOCALAI_BIND:-127.0.0.1}:${OPENLOCALAI_PORT:-8765}:8765"
+    volumes:
+      - app_data:/data
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).read()
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    stop_grace_period: 20s
+
+networks:
+  backend:
+    name: openlocalai-backend
+
+volumes:
+  app_data:
+    name: openlocalai-app-data
+  ollama_models:
+    name: openlocalai-ollama-models
