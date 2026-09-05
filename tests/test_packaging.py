@@ -35,6 +35,8 @@ class PackagingTests(unittest.TestCase):
                 info = tarfile.TarInfo(name)
                 info.size = len(content)
                 archive.addfile(info, io.BytesIO(content))
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "utf-8"
         return subprocess.run(
             [
                 sys.executable,
@@ -58,6 +60,7 @@ class PackagingTests(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            env=environment,
         )
 
     def test_offline_sbom_contains_exact_components_and_artifact_hashes(self):
@@ -191,7 +194,10 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("scripts/check_release_tree.py", workflow)
         self.assertNotIn("cp -R src scripts docs", workflow)
 
-    @unittest.skipUnless(shutil.which("bash"), "bash is required for installer guard tests")
+    @unittest.skipUnless(
+        os.name != "nt" and shutil.which("bash"),
+        "POSIX bash is required for installer guard tests",
+    )
     def test_installers_reject_embedding_model_before_docker(self):
         for script in (ROOT / "scripts" / "install.sh", ROOT / "scripts" / "build-offline-bundle.sh"):
             result = subprocess.run(
@@ -276,7 +282,10 @@ exit /b 1
         )
         return fake_bin
 
-    @unittest.skipUnless(shutil.which("bash"), "bash is required for offline installer tests")
+    @unittest.skipUnless(
+        os.name != "nt" and shutil.which("bash"),
+        "POSIX bash is required for offline installer tests",
+    )
     def test_offline_shell_installer_rejects_platform_mismatch_before_mutation(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
